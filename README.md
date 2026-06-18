@@ -123,4 +123,11 @@ Troubleshooting
 License
 -------
 
-MIT license. Feel free to use and modify for your own practice. No warranty – use at your own risk. Remember to follow all rules regardng HIPAA/PHI.
+MIT license. Feel free to use and modify for your own practice. No warranty – use at your own risk.
+
+* * *
+
+Privacy
+-------
+
+Remember to follow all applicable rules regardng HIPAA/PHI.
