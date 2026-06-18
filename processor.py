@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""
+Extract unique email addresses from CSV files in a source directory,
+split them into files of 80 addresses each, and write them to an output directory.
+Previous BCC files are automatically archived before new ones are created.
+
+Expected to be called by the companion shell script, but can be run standalone.
+"""
+
+import argparse
+import glob
+import os
+import re
+import shutil
+import sys
+from datetime import datetime
+
+import pandas as pd
+
+
+# Simple but more reliable email regex
+EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+CHUNK_SIZE = 80
+
+
+def archive_existing_bcc_files(output_dir: str) -> None:
+    """Move any existing bcc_emails*.txt files into a timestamped archive folder."""
+    old_files = glob.glob(os.path.join(output_dir, "bcc_emails*.txt"))
+    if not old_files:
+        return
+
+    # Create a timestamped archive directory
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+    archive_dir = os.path.join(output_dir, f"archive_{timestamp}")
+    os.makedirs(archive_dir, exist_ok=True)
+
+    for file_path in old_files:
+        dest = os.path.join(archive_dir, os.path.basename(file_path))
+        shutil.move(file_path, dest)
+        print(f"Archived: {os.path.basename(file_path)} -> {archive_dir}/", file=sys.stderr)
+
+
+def extract_emails(input_dir: str, output_dir: str) -> int:
+    """Extract emails, write chunk files, return total unique email count."""
+    all_emails: set[str] = set()
+    csv_files = glob.glob(os.path.join(input_dir, "*.csv"))
+
+    if not csv_files:
+        print("No CSV files found in input directory.", file=sys.stderr)
+        sys.exit(1)
+
+    for file_path in csv_files:
+        try:
+            # Use a BOM-aware encoding and the Python engine for maximum compatibility
+            df = pd.read_csv(file_path, engine="python", encoding="utf-8-sig")
+
+            # First, look for columns whose name contains 'email'
+            target_cols = [col for col in df.columns if "email" in str(col).lower()]
+
+            # If none found, fallback to columns containing '@' in their first 10 values
+            if not target_cols:
+                for col in df.columns:
+                    sample = df[col].dropna().astype(str).head(10)
+                    if sample.str.contains("@").any():
+                        target_cols.append(col)
+                        print(
+                            f"Using column '{col}' (no column with 'email' in name found).",
+                            file=sys.stderr,
+                        )
+
+            if not target_cols:
+                print(
+                    f"No email-like columns found in {file_path}. Skipping.",
+                    file=sys.stderr,
+                )
+                continue
+
+            for col in target_cols:
+                emails = (
+                    df[col]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    .tolist()
+                )
+                # Only keep addresses matching the regex
+                valid = [e for e in emails if EMAIL_RE.fullmatch(e)]
+                all_emails.update(valid)
+
+        except Exception as e:
+            print(f"Error processing {file_path}: {e}", file=sys.stderr)
+
+    if not all_emails:
+        print("No valid email addresses found.", file=sys.stderr)
+        sys.exit(1)
+
+    # Prepare output directory and archive old files before writing new ones
+    os.makedirs(output_dir, exist_ok=True)
+    archive_existing_bcc_files(output_dir)
+
+    sorted_emails = sorted(all_emails)
+    total = len(sorted_emails)
+
+    for i in range(0, total, CHUNK_SIZE):
+        chunk = sorted_emails[i : i + CHUNK_SIZE]
+        file_num = (i // CHUNK_SIZE) + 1
+        out_path = os.path.join(output_dir, f"bcc_emails{file_num}.txt")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("; ".join(chunk))
+
+    # Only this line goes to stdout → parsed by the shell script
+    print(f"SUCCESS|{total}")
+    return total
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Extract and chunk email addresses from CSV files."
+    )
+    parser.add_argument(
+        "--input",
+        default=os.path.expanduser("~/emailpuller"),
+        help="Directory containing the CSV files (default: ~/emailpuller)",
+    )
+    parser.add_argument(
+        "--output",
+        default=os.path.expanduser("~/Desktop/emailpuller"),
+        help="Directory where chunk files will be written (default: ~/Desktop/emailpuller)",
+    )
+    args = parser.parse_args()
+
+    extract_emails(args.input, args.output)
+
+
+if __name__ == "__main__":
+    main()
