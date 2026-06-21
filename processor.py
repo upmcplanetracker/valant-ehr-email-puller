@@ -18,7 +18,6 @@ from datetime import datetime
 import pandas as pd
 
 
-# Simple but more reliable email regex
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 CHUNK_SIZE = 80
@@ -30,7 +29,6 @@ def archive_existing_bcc_files(output_dir: str) -> None:
     if not old_files:
         return
 
-    # Create a timestamped archive directory
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
     archive_dir = os.path.join(output_dir, f"archive_{timestamp}")
     os.makedirs(archive_dir, exist_ok=True)
@@ -52,13 +50,10 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
 
     for file_path in csv_files:
         try:
-            # Use a BOM-aware encoding and the Python engine for maximum compatibility
             df = pd.read_csv(file_path, engine="python", encoding="utf-8-sig")
 
-            # First, look for columns whose name contains 'email'
             target_cols = [col for col in df.columns if "email" in str(col).lower()]
 
-            # If none found, fallback to columns containing '@' in their first 10 values
             if not target_cols:
                 for col in df.columns:
                     sample = df[col].dropna().astype(str).head(10)
@@ -85,7 +80,6 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
                     .str.lower()
                     .tolist()
                 )
-                # Only keep addresses matching the regex
                 valid = [e for e in emails if EMAIL_RE.fullmatch(e)]
                 all_emails.update(valid)
 
@@ -96,7 +90,6 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
         print("No valid email addresses found.", file=sys.stderr)
         sys.exit(1)
 
-    # Prepare output directory and archive old files before writing new ones
     os.makedirs(output_dir, exist_ok=True)
     archive_existing_bcc_files(output_dir)
 
@@ -110,7 +103,6 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("; ".join(chunk))
 
-    # Only this line goes to stdout → parsed by the shell script
     print(f"SUCCESS|{total}")
     return total
 
