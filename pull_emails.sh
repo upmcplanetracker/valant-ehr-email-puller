@@ -34,19 +34,28 @@ if [[ ! -f "$SCRIPT" ]]; then
     exit 1
 fi
 
-RESULT=$("$VENV_PYTHON" "$SCRIPT" 2>/dev/null) || {
-    echo "No emails found or no CSV files present in $INPUT_DIR." >&2
-    echo "Check if Facesheets.csv is actually inside $INPUT_DIR" >&2
-    exit 1
-}
+# Run the Python script, capturing stdout ONLY. Errors go to the terminal (via stderr).
+# We don't suppress stderr anymore so you can see real errors.
+RAW_OUTPUT=$("$VENV_PYTHON" "$SCRIPT" 2>&1) || PYTHON_EXIT=$?
+# (We'll handle the output and exit code below)
 
-TOTAL_EMAILS=$(echo "$RESULT" | cut -d'|' -f2)
+# Check for the explicit success marker
+SUCCESS_LINE=$(echo "$RAW_OUTPUT" | grep '^SUCCESS|')
+if [[ -z "$SUCCESS_LINE" ]]; then
+    echo "Extraction failed or no emails found." >&2
+    # Print whatever the Python script emitted to help debugging
+    echo "$RAW_OUTPUT" >&2
+    exit 1
+fi
+
+TOTAL_EMAILS=$(echo "$SUCCESS_LINE" | cut -d'|' -f2)
 
 echo "------------------------------------------"
 echo "Extraction complete!"
 echo "Total Unique Emails Found: $TOTAL_EMAILS"
 echo "Files created in $OUTPUT_DIR"
 
+# Clean up original CSV files
 shopt -s nullglob
 CSV_FILES=( "$INPUT_DIR"/*.csv )
 if [[ ${#CSV_FILES[@]} -gt 0 ]]; then
@@ -55,8 +64,14 @@ if [[ ${#CSV_FILES[@]} -gt 0 ]]; then
         echo "Original CSV files have been deleted from $INPUT_DIR."
     else
         mkdir -p "$PROCESSED_DIR"
-        mv "$INPUT_DIR"/*.csv "$PROCESSED_DIR/"
-        echo "Original CSV files have been moved to $PROCESSED_DIR."
+        # Append timestamp to avoid overwriting previous exports
+        TS=$(date +"%Y%m%d_%H%M%S")
+        for csvfile in "${CSV_FILES[@]}"; do
+            base=$(basename "$csvfile")
+            newname="${base%.csv}_${TS}.csv"
+            mv "$csvfile" "$PROCESSED_DIR/$newname"
+        done
+        echo "Original CSV files have been moved to $PROCESSED_DIR (timestamped)."
     fi
 else
     echo "No CSV files found to clean up."
