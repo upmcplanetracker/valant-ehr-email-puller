@@ -2,7 +2,7 @@
 """
 Extract unique email addresses from CSV files in a source directory,
 split them into files of 80 addresses each, and write them to an output directory.
-Previous BCC files are automatically archived before new ones are created.
+Previous BCC files are archived only *after* new ones are safely created.
 
 Expected to be called by the companion shell script, but can be run standalone.
 """
@@ -13,13 +13,12 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from datetime import datetime
 
 import pandas as pd
 
-
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
-
 CHUNK_SIZE = 80
 
 
@@ -29,18 +28,22 @@ def archive_existing_bcc_files(output_dir: str) -> None:
     if not old_files:
         return
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+    # Include seconds to avoid name collisions when run multiple times per minute
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     archive_dir = os.path.join(output_dir, f"archive_{timestamp}")
     os.makedirs(archive_dir, exist_ok=True)
 
     for file_path in old_files:
         dest = os.path.join(archive_dir, os.path.basename(file_path))
         shutil.move(file_path, dest)
-        print(f"Archived: {os.path.basename(file_path)} -> {archive_dir}/", file=sys.stderr)
+        print(f"Archived: {os.path.basename(file_path)} -> {archive_dir}/",
+              file=sys.stderr)
 
 
 def extract_emails(input_dir: str, output_dir: str) -> int:
-    """Extract emails, write chunk files, return total unique email count."""
+    """Extract emails, safely write chunk files, then archive old ones.
+    Returns total unique email count.
+    """
     all_emails: set[str] = set()
     csv_files = glob.glob(os.path.join(input_dir, "*.csv"))
 
@@ -52,8 +55,10 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
         try:
             df = pd.read_csv(file_path, engine="python", encoding="utf-8-sig")
 
+            # 1. Try columns with 'email' in their name
             target_cols = [col for col in df.columns if "email" in str(col).lower()]
 
+            # 2. Fallback: scan first 10 rows for any column containing '@'
             if not target_cols:
                 for col in df.columns:
                     sample = df[col].dropna().astype(str).head(10)
@@ -90,19 +95,33 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
         print("No valid email addresses found.", file=sys.stderr)
         sys.exit(1)
 
-    os.makedirs(output_dir, exist_ok=True)
-    archive_existing_bcc_files(output_dir)
-
     sorted_emails = sorted(all_emails)
     total = len(sorted_emails)
 
-    for i in range(0, total, CHUNK_SIZE):
-        chunk = sorted_emails[i : i + CHUNK_SIZE]
-        file_num = (i // CHUNK_SIZE) + 1
-        out_path = os.path.join(output_dir, f"bcc_emails{file_num}.txt")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write("; ".join(chunk))
+    os.makedirs(output_dir, exist_ok=True)
 
+    # --- Safety: write new files to a temp subdirectory ---
+    tmpdir = tempfile.mkdtemp(dir=output_dir, prefix=".tmp_chunks_")
+    try:
+        for i in range(0, total, CHUNK_SIZE):
+            chunk = sorted_emails[i : i + CHUNK_SIZE]
+            file_num = (i // CHUNK_SIZE) + 1
+            tmp_path = os.path.join(tmpdir, f"bcc_emails{file_num}.txt")
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write("; ".join(chunk))
+
+        # New files are written – now it’s safe to archive old ones
+        archive_existing_bcc_files(output_dir)
+
+        # Move new files from temp dir to output dir
+        for fname in os.listdir(tmpdir):
+            shutil.move(os.path.join(tmpdir, fname),
+                        os.path.join(output_dir, fname))
+    finally:
+        # Clean up temp dir (empty now if successful)
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    # Print a single parsable success line (only this goes to stdout)
     print(f"SUCCESS|{total}")
     return total
 
