@@ -40,7 +40,7 @@ RAW_OUTPUT=$("$VENV_PYTHON" "$SCRIPT" 2>&1) || PYTHON_EXIT=$?
 # (We'll handle the output and exit code below)
 
 # Check for the explicit success marker
-SUCCESS_LINE=$(echo "$RAW_OUTPUT" | grep '^SUCCESS|')
+SUCCESS_LINE=$(echo "$RAW_OUTPUT" | grep '^SUCCESS|' || true)
 if [[ -z "$SUCCESS_LINE" ]]; then
     echo "Extraction failed or no emails found." >&2
     # Print whatever the Python script emitted to help debugging
