@@ -45,7 +45,7 @@ def extract_emails(input_dir: str, output_dir: str) -> int:
     Returns total unique email count.
     """
     all_emails: set[str] = set()
-    csv_files = glob.glob(os.path.join(input_dir, "*.csv"))
+    csv_files = glob.glob(os.path.join(input_dir, "*.[cC][sS][vV]"))
 
     if not csv_files:
         print("No CSV files found in input directory.", file=sys.stderr)
