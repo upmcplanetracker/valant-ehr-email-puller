@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: $0 [--delete-original]" >&2
+            echo "Usage: ${BASH_SOURCE[0]:-$0} [--delete-original]" >&2
             exit 1
             ;;
     esac
@@ -34,46 +34,67 @@ if [[ ! -f "$SCRIPT" ]]; then
     exit 1
 fi
 
-# Run the Python script, capturing stdout ONLY. Errors go to the terminal (via stderr).
-# We don't suppress stderr anymore so you can see real errors.
-RAW_OUTPUT=$("$VENV_PYTHON" "$SCRIPT" 2>&1) || PYTHON_EXIT=$?
-# (We'll handle the output and exit code below)
+# Capture stdout only. Stderr goes to terminal naturally.
+PYTHON_EXIT=0
+RAW_OUTPUT=$("$VENV_PYTHON" "$SCRIPT") || PYTHON_EXIT=$?
+
+if [[ $PYTHON_EXIT -ne 0 ]]; then
+    echo "Python script failed with exit code $PYTHON_EXIT." >&2
+    exit 1
+fi
 
 # Check for the explicit success marker
 SUCCESS_LINE=$(echo "$RAW_OUTPUT" | grep '^SUCCESS|' || true)
 if [[ -z "$SUCCESS_LINE" ]]; then
-    echo "Extraction failed or no emails found." >&2
-    # Print whatever the Python script emitted to help debugging
+    echo "Extraction failed: no SUCCESS marker found in output." >&2
+    echo "Raw output:" >&2
     echo "$RAW_OUTPUT" >&2
     exit 1
 fi
 
 TOTAL_EMAILS=$(echo "$SUCCESS_LINE" | cut -d'|' -f2)
+if ! [[ "$TOTAL_EMAILS" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: Invalid email count returned: '$TOTAL_EMAILS'" >&2
+    exit 1
+fi
 
 echo "------------------------------------------"
 echo "Extraction complete!"
 echo "Total Unique Emails Found: $TOTAL_EMAILS"
 echo "Files created in $OUTPUT_DIR"
 
-# Clean up original CSV files
-shopt -s nullglob
-CSV_FILES=( "$INPUT_DIR"/*.csv )
-if [[ ${#CSV_FILES[@]} -gt 0 ]]; then
-    if $DELETE_ORIGINAL; then
-        rm -f "$INPUT_DIR"/*.csv
-        echo "Original CSV files have been deleted from $INPUT_DIR."
+# Clean up original CSV files — match same case-insensitive pattern as Python
+(
+    shopt -s nullglob
+    CSV_FILES=( "$INPUT_DIR"/*.[cC][sS][vV] )
+    if [[ ${#CSV_FILES[@]} -eq 0 ]]; then
+        echo "No CSV files found to clean up."
     else
-        mkdir -p "$PROCESSED_DIR"
-        # Append timestamp to avoid overwriting previous exports
-        TS=$(date +"%Y%m%d_%H%M%S")
-        for csvfile in "${CSV_FILES[@]}"; do
-            base=$(basename "$csvfile")
-            newname="${base%.csv}_${TS}.csv"
-            mv "$csvfile" "$PROCESSED_DIR/$newname"
-        done
-        echo "Original CSV files have been moved to $PROCESSED_DIR (timestamped)."
+        if $DELETE_ORIGINAL; then
+            rm -f "${CSV_FILES[@]}"
+            echo "Original CSV files have been deleted from $INPUT_DIR."
+        else
+            mkdir -p "$PROCESSED_DIR"
+            TS=$(date -u +"%Y%m%d_%H%M%S_UTC")
+            for csvfile in "${CSV_FILES[@]}"; do
+                base=$(basename "$csvfile")
+                # Strip original extension (any case), add timestamp + .csv
+                ext="${base##*.}"
+                stem="${base%.*}"
+                newname="${stem}_${TS}.csv"
+                # Avoid collisions: if file exists, append a counter
+                dest="$PROCESSED_DIR/$newname"
+                counter=1
+                while [[ -e "$dest" ]]; do
+                    newname="${stem}_${TS}_${counter}.csv"
+                    dest="$PROCESSED_DIR/$newname"
+                    ((counter++))
+                done
+                mv "$csvfile" "$dest"
+            done
+            echo "Original CSV files have been moved to $PROCESSED_DIR (timestamped)."
+        fi
     fi
-else
-    echo "No CSV files found to clean up."
-fi
+)
+
 echo "------------------------------------------"
