@@ -49,7 +49,7 @@ Usage
 *   Click the **Download** arrow in the toolbar and choose **CSV format**.
 *   Save the file directly into the folder:  
     `~/emailpuller/`  
-    (The file is usually called `Facesheets.csv`, but any `.csv` filename works.)
+    (The file is usually called `Facesheets.csv`, but any `.csv` or `.CSV` filename works.)
 
 ### 2\. Run the extractor
 
@@ -59,8 +59,8 @@ Open a terminal and run the shell script:
 
 This will:
 
-*   Find all `.csv` files in `~/emailpuller/`
-*   Extract and deduplicate all valid email addresses
+*   Find all `.csv` / `.CSV` files in `~/emailpuller/`
+*   Extract and deduplicate all valid-looking email addresses
 *   Create numbered BCC files (`bcc_emails1.txt`, `bcc_emails2.txt`, …) in `~/Desktop/emailpuller/`
 *   **Move** the original CSV(s) into `~/emailpuller/processed/` for your records
 
@@ -79,14 +79,14 @@ Before writing new ones, it moves any existing `bcc_emails*.txt` files into a ti
 
     ~/Desktop/emailpuller/
     ├── bcc_emails1.txt          ← newest run
-    ├── archive_2026-06-18_1430/
+    ├── archive_2026-06-18_1430_UTC/
     │   ├── bcc_emails1.txt      ← previous run
     │   └── bcc_emails2.txt
-    └── archive_2026-06-19_0900/
+    └── archive_2026-06-19_0900_UTC/
         ├── bcc_emails1.txt
         └── ...
 
-This way you always have a history of every extraction you’ve made, and you can safely run the script as often as you like without losing anything.
+This way you always have a history of every extraction you've made, and you can safely run the script as often as you like without losing anything.
 
 🧹 **Tip:** Over time the archive folders will pile up. Delete old ones manually when you no longer need them.
 
@@ -112,11 +112,12 @@ Troubleshooting
 
 | Problem | Solution |
 |---|---|
-| “Python virtual environment not found” | Run the setup steps again, making sure the venv is at `~/emailpuller/venv` and `python3` is installed. |
-| “No CSV files found” | Confirm you saved the Facesheet CSV directly into `~/emailpuller/`, and that the filename ends with `.csv`. |
-| The script runs but no email files appear | The CSV may not contain an email column, or the column name may not contain “email” and the first few rows lack a “@” – check your Valant export. |
+| "Python virtual environment not found" | Run the setup steps again, making sure the venv is at `~/emailpuller/venv` and `python3` is installed. |
+| "No CSV files found" | Confirm you saved the Facesheet CSV directly into `~/emailpuller/`, and that the filename ends with `.csv` or `.CSV`. |
+| The script runs but no email files appear | The CSV may not contain an email column, or the column name may not contain "email" and the first few rows lack a "@" – check your Valant export. |
+| "All files failed to parse" | Check the terminal output for specific file errors. One malformed CSV won't stop others from processing, but if *all* files fail, nothing gets extracted. |
 | Files are not split exactly to 80 addresses | This is normal if the total number of unique emails is not a multiple of 80 – the last file will have fewer than 80. |
-| Encoding errors | The script uses UTF-8 with BOM handling. If you still see encoding issues, try re-exporting the Facesheet from Valant. |
+| Encoding errors | The script uses UTF-8 with BOM handling and tries a fast parser first, falling back to a slower one on malformed files. If you still see issues, try re-exporting the Facesheet from Valant. |
 
 * * *
 
@@ -130,4 +131,4 @@ MIT license. Feel free to use and modify for your own practice. No warranty – 
 Privacy
 -------
 
-Remember to follow all applicable rules regardng HIPAA/PHI.
+Remember to follow all applicable rules regarding HIPAA/PHI.
