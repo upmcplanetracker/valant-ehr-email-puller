@@ -106,6 +106,7 @@ def extract(input_dir: str, output_dir: str, chunk_size: int) -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    print(f"PROCESSED|{json.dumps(report.files_ok)}")
     print(f"SUCCESS|{total}")
     return total
 
